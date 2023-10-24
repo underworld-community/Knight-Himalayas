@@ -1,11 +1,9 @@
 <table><tr><td><img src='./fig6_F2SEvolution.pdf'></td></tr></table>
 
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/underworld-community/template-project/master)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/underworld-community/Knight-Himalayas/master)
 
 About
 -----
-**_Please replace the following with information about your own repository._**
-
 Welcome! This repo contains the python setup file for the Himalayan reconstruction convergence models. The model can be run online through the binder link or downloaded and used within a Underworld docker container.
 
 Files
