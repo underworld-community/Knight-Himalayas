@@ -1,4 +1,4 @@
-<table><tr><td><img src='./raytay_init.png'></td><td><img src='./raytay.png'></td></tr></table>
+<table><tr><td><img src='./fig6_F2SEvolution.pdf'></td></tr></table>
 
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/underworld-community/template-project/master)
 
@@ -6,31 +6,14 @@ About
 -----
 **_Please replace the following with information about your own repository._**
 
-Welcome! This is a template git repository for creating REPRODUCIBLE Underworld code based projects.
-
-REPRODUCIBLE because this project:
-1. Is stored in a git repository.
-2. Uses a Dockerfile to recreate the exact project environment.
-
-The two features above enable the project to take advantage of software engineering and open source principles, such as:
-_version control_, _reproducible environments_, _collaboration_ (Pull Requests, Binderhub), _continuous integration_. 
-
-(See https://the-turing-way.netlify.com/, for a general introduction to these principle. N.B. it is data-science focussed)  
-
-You can use this repository as a GitHub template to start a new repository of your own that matches the requirements of the underworld-community. To get started, hit the "Use this template" button above. See this [quick start guide]( https://github.com/underworld-community/template-project/wiki/Quick-start) for more information.
-
+Welcome! This repo contains the python setup file for the Himalayan reconstruction convergence models. The model can be run online through the binder link or downloaded and used within a Underworld docker container.
 
 Files
 -----
-**_Please give a quick overview of purpose of the model files/directories included in this repo._**
-**_Note that while light data files are fine,  heavy data should not be included in your repository._**
-
 File | Purpose
 --- | ---
-`RayTay.ipynb` | A simple Rayleigh Taylor notebook. 
-`VrmsCaseA.txt`| Expected results data file. 
-`raytay.png` | Image file.
-`raytay_init.png` | Initial image file.
+`HimalayasReconstructionModel.py` | Python script to run the model. Can be modified to recreate any case presented in the manuscript. 
+`fig6_F2SEvolution.pdf` | Evolution of the fast-to-slow model, which recreates similar structures that are seen in the Himalayas.
 
 Tests
 -----
@@ -38,7 +21,6 @@ Tests
 **_Tests are not required for `laboratory` tagged repositories, although still encouraged._**
 **_All other repositories must include a test._**
 
-The attained peak VRMs time is tested against an expected value. If it is outside a given tolerance, an exception is raised.
 
 Parallel Safe
 -------------
@@ -48,8 +30,8 @@ Yes, test result should be obtained in both serial and parallel operation.
 
 Check-list
 ----------
-- [ ] (Required) Have you replaced the above sections with your own content? 
-- [ ] (Required) Have you updated the Dockerfile to point to your required UW/UWG version? 
-- [ ] (Required) Have you included a working Binder badge/link so people can easily run your model?
+- [Y] (Required) Have you replaced the above sections with your own content? 
+- [Y] (Required) Have you updated the Dockerfile to point to your required UW/UWG version? 
+- [Y] (Required) Have you included a working Binder badge/link so people can easily run your model?
                  You probably only need to replace `template-project` with your repo name. 
-- [ ] (Optional) Have you included an appropriate image for your model? 
+- [Y] (Optional) Have you included an appropriate image for your model? 
