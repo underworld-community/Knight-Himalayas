@@ -20,8 +20,9 @@ from datetime import datetime
 import pytz
 import numpy as np
 import math
-import matplotlib.pyplot as plt
+
 import pandas as pd
+import scipy
 
 import underworld.visualisation as visualisation
 
@@ -41,8 +42,8 @@ u = GEO.UnitRegistry
 GEO.rcParams['initial.nonlinear.max.iterations'] = 100
 GEO.rcParams['nonlinear.max.iterations']         = 100
 
-GEO.rcParams["popcontrol.particles.per.cell.2D"] = 20
-GEO.rcParams["swarm.particles.per.cell.2D"]      = 20
+GEO.rcParams["popcontrol.particles.per.cell.2D"] = 30
+GEO.rcParams["swarm.particles.per.cell.2D"]      = 30
 
 GEO.rcParams["popcontrol.split.threshold"]       = 0.1
 
@@ -52,18 +53,15 @@ restart = False
 # %%
 # ### Values to change
 
-#### 3 options
-## fast = 10 cm/yr
-## slow = 2 cm/yr
-## F2S = 10 to 2 cm/yr, this is the default
-
-model_velProfile = 'F2S' # , 'slow', 'fast'
+#### change the fast to slow max and min velocity, set v_min = v_max for constant velocity
+v_max = 10.
+v_min = 2.
 
 ### number of timesteps from each model
 noOfTS = 100.
 
 ### Total convegence of all models
-totalConvergence = 2000.0 ### in km
+totalConvergence = 2030.0 ### in km
 
 #### km
 Sticky_air = 40.0
@@ -88,10 +86,6 @@ x_threshold_Strain_weakening = 200.0
 #### diffusion constant for surface, m^2/year for diffusion erosion model
 D_surface = (150.0 * u.meter**2 / u.year)
 
-### sedimentation and erosion rates for vel erosion model
-# Vs = ((0.03 * u.millimeter / u.year).to(u.kilometer / u.year))
-# Ve = ((-0.3 * u.millimeter / u.year).to(u.kilometer / u.year))
-
 ### reference density values, individual values for materials can also be changed below
 sed_dens    = 2500 * u.kilogram/u.meter**3
 crust_dens  = 2700 * u.kilogram/u.meter**3
@@ -101,6 +95,41 @@ mantle_dens = 3300 * u.kilogram/u.meter**3
 sediment_IH = 2.   * u.microwatt / u.meter**3
 crust_IH    = 2.   * u.microwatt / u.meter**3
 mantle_IH   = 0.02 * u.microwatt / u.meter**3
+
+# %% [markdown]
+# ### Create velocity profile
+#
+# Can be adapted to model any vel-time path
+
+# %%
+time_arr  = np.arange(0, 50.01,50/1000)
+vel_arr = 12*(1-.059)**(time_arr)  ### slow decrease in velocity
+# vel_arr = 50.00*(1-.16)**(time_arr) ### quick drop in velocity
+vel_arr = np.where(vel_arr >= v_max, v_max, vel_arr)
+vel_arr = np.where(vel_arr <= v_min, v_min, vel_arr)
+
+### estimate the total convergence of the array
+convergence_arr = np.hstack((0, scipy.integrate.cumulative_trapezoid(vel_arr, time_arr*10)))
+
+
+modelDuration = time_arr[convergence_arr < totalConvergence][-1]
+convergence_arr = convergence_arr[convergence_arr < totalConvergence]
+
+The_Checkpoint_interval = modelDuration / noOfTS
+
+vel_fn = scipy.interpolate.interp1d(time_arr, vel_arr)
+
+if uw.mpi.rank == 0:
+    print(f'model duration: {modelDuration} Myr')
+    print(f'timestep interval: {The_Checkpoint_interval}')
+    print(f'number of TS: {noOfTS}')
+    print(f'total convergence: {round(convergence_arr[-1])}')
+
+# %%
+if uw.mpi.size == 1:
+    import matplotlib.pyplot as plt
+    plt.plot(time_arr, vel_arr)
+    plt.plot(time_arr, vel_fn(time_arr), ls=':' )
 
 # %%
 # ### Setup of box
@@ -189,7 +218,7 @@ Model = GEO.Model(elementRes=(x_res, y_res),
 # %%
 today = datetime.now(pytz.timezone('Australia/Melbourne'))
 if restart == False:
-    Model.outputDir = os.path.join(model_velProfile.casefold() + f'-{(x_box/x_res)}_res-2000km_conv-{int(crust_dens.magnitude)}Dens-{int(D_surface.magnitude)}D-{int(crust_IH.magnitude)}IH'  + today.strftime('%Y-%m-%d_%H-%M') + "/")
+    Model.outputDir = os.path.join(f'v_max={v_max}-v_min={v_min}-modelDuration={modelDuration}Myr_res={int(x_box/x_res)}km-TC={round(convergence_arr[-1])}-C_rho={int(crust_dens.magnitude)}-C_HR={int(crust_IH.magnitude)}-D_surf={int(D_surface.magnitude)}_'  + today.strftime('%Y-%m-%d_%H-%M') + "/")
     
     directory = os.getcwd() +'/'+ Model.outputDir
 
@@ -197,6 +226,9 @@ if restart == True:
     RestartDirectory = os.getcwd()
     directory = RestartDirectory
 
+
+# %%
+Model.outputDir
 
 # %%
 """ Additional swarm variables """
@@ -433,6 +465,10 @@ Quartzite_Dislocation_Ranalli_1995 = GEO.ViscousCreep(preExponentialFactor=6.7e-
 
 
 
+#rh.Dry_Olivine_Dislocation_Karato_and_Wu_1993
+#rh.Wet_Olivine_Dislocation_Karato_and_Wu_1993
+
+
 # %%
 Model.minViscosity = 1e19 * u.pascal * u.second
 Model.maxViscosity = 1e24 * u.pascal * u.second
@@ -573,51 +609,18 @@ def updateVelocityBC(velocity):
                       right=[0., 0.],
                       top = [None, 0.])
 
+
 # %%
-if model_velProfile.casefold() == 'slow':
-    vel = 2. ### cm/yr
-    modelDuration = (totalConvergence*1e5 / vel)/1e6 #### time in Myr
-    
-    updateVelocityBC(velocity = vel)
-    
-    The_Checkpoint_interval = modelDuration / noOfTS
-    
+def decreasingVelFunction():
+    vel_new = vel_fn(Model.time.m/1e6)
 
     
-elif model_velProfile.casefold() == 'fast':
-    vel = 10.
-    modelDuration = (totalConvergence*1e5 / vel)/1e6 #### time in Myr
-    
-    updateVelocityBC(velocity = vel)
+    updateVelocityBC(velocity = vel_new)
 
-    The_Checkpoint_interval = modelDuration / noOfTS
+decreasingVelFunction()
 
-    
-
-else:
-    modelDuration = 50. #### time in Myr
-    
-    The_Checkpoint_interval = modelDuration / noOfTS
-    
-    def decreasingVelFunction():
-        vel = 12*(1-.059)**float(Model.time.magnitude/1e6)
-        vel = np.where(vel >= 10, 10, vel)
-        vel = np.where(vel <= 2, 2, vel)
-        
-        updateVelocityBC(velocity = vel)
-        
-    decreasingVelFunction()
-    
-    #### update velocity every loop
-    Model.pre_solve_functions["updateVel"] = decreasingVelFunction
-        
-        
-    
-if uw.mpi.size == 1:
-    print(f'model duration: {modelDuration} Myr')
-    print(f'timestep interval: {The_Checkpoint_interval}')
-    print(f'number of TS: {noOfTS}')
-
+#### update velocity every timestep
+Model.pre_solve_functions["updateVel"] = decreasingVelFunction
 
 # %%
 ### Grid Tracers for the model
@@ -632,6 +635,11 @@ Model.add_passive_tracers(name="FSE_Crust", vertices=coords_circ)
 Model.FSE_Crust_tracers.add_tracked_field(Model.pressureField,
                               name="tracers_press",
                               units=u.megapascal,
+                              dataType="double")
+
+Model.FSE_Crust_tracers.add_tracked_field(Model._stressField,
+                              name="tracers_stress",
+                                units=u.pascal,
                               dataType="double")
 
 Model.FSE_Crust_tracers.add_tracked_field(Model.temperature,
@@ -682,14 +690,21 @@ Model.temperature.data[:,0][(Model.mesh.data[:,1] < GEO.nd(mantleLithosphere.bot
 
 
 # %%
-if uw.mpi.size == 0:
+if uw.mpi.size == 1:
     dir(rh)
 
 # %%
 # Only run this when in serial. Will fail in parallel
+
 if GEO.nProcs == 1:
+    ''' only plots and updates viscosity of material when run on one proc, to test the strength profile '''
 
     import matplotlib.pyplot as plt
+
+    # moho_average_temperature = Model.temperature.evaluate(Model.Moho_tracers).mean()
+    # moho_average_temperature = GEO.dimensionalise(moho_average_temperature, u.degC)
+
+    # print("Average Temperature at Moho: {0:5.0f}".format(moho_average_temperature))
     
     y = np.linspace(GEO.nd(air.top), GEO.nd(mantleLithosphere.bottom), 1000)
     x = np.zeros_like(y)+GEO.nd(100*u.kilometer)
@@ -701,12 +716,21 @@ if GEO.nProcs == 1:
     # print(coords)
     
     temp = Model.temperature.evaluate(coords)
+    # visc = Model.viscosityField.evaluate(coords)
     
-    ### too weak
+    ### Testing different quartz viscosity of crust
     crust1.viscosity = 1.*Quartzite_Dislocation_Ranalli_1995
     crust2.viscosity = 1.*Quartzite_Dislocation_Ranalli_1995
     visc_RQ = Model.viscosityField.evaluate(coords) # rh.Dry_Mafic_Granulite_Dislocation_Wang_et_al_2012
     
+    
+    crust1.viscosity = rh.Wet_Quartz_Dislocation_Tullis_et_al_2002
+    crust2.viscosity = rh.Wet_Quartz_Dislocation_Tullis_et_al_2002
+    visc_WQ1 = Model.viscosityField.evaluate(coords) # Quartzite_Dislocation_Ranalli_1995
+
+    
+    # distances, temperature = GEO.extract_profile(Model.temperature, line = [(180.* u.kilometer, 0.), (180.* u.kilometer, Model.bottom)])
+    # distances, pressure = GEO.extract_profile(Model.pressureField, line = [(180.* u.kilometer, 0.), (180.* u.kilometer, Model.bottom)])
 
     Fig, (ax1, ax2) = plt.subplots(1,2,figsize=(15,7), sharey=True)
     ax1.plot(GEO.dimensionalise(temp, u.degK), GEO.dimensionalise(y, u.kilometer))
@@ -715,12 +739,15 @@ if GEO.nProcs == 1:
     ax1.set_ylim(-100, 40)
     ax1.set_title("Temperature profile")
 
-
-    ax2.plot((GEO.dimensionalise(visc_RQ, u.pascal * u.second)), GEO.dimensionalise(y, u.kilometer), ls=":")
+    # ax2.plot((GEO.dimensionalise(visc_DMG, u.pascal * u.second)), GEO.dimensionalise(y, u.kilometer))
+    # ax2.plot((GEO.dimensionalise(visc_WQ0, u.pascal * u.second)), GEO.dimensionalise(y, u.kilometer), ls='--', c='red')
+    ax2.plot((GEO.dimensionalise(visc_WQ1, u.pascal * u.second)), GEO.dimensionalise(y, u.kilometer), ls='--', c='blue', label='WQ [Tullis et al., 2002]')
+    ax2.plot((GEO.dimensionalise(visc_RQ, u.pascal * u.second)), GEO.dimensionalise(y, u.kilometer), ls=":", label='Q [Ranalli, 1995]')
+    ax2.legend()
     ax2.set_xlabel("Viscosity in Pa S")
     ax2.set_ylabel("Depth in kms")
     ax2.set_title("Viscosity profile")
-    ax2.set_ylim(-40, 40)
+    ax2.set_ylim(-100, 40)
     plt.show()
 
 
@@ -900,35 +927,50 @@ Model.post_solve_functions["A-post"] = Update_Material_LHS
 
 # %%
 if D_surface.magnitude > 0.: 
+    from UW_SP import *
+    # import numpy as np
+
     ### set up surface tracers every 1 km
     npoints = int(Model.length.magnitude)
-    
+
     coords = np.ndarray((npoints, 2))
     coords[:, 0] = np.linspace(GEO.nd(Model.minCoord[0]), GEO.nd(Model.maxCoord[0]), npoints)
     coords[:, 1] = GEO.nd(air.bottom)
-    
-    Model.surfaceProcesses = GEO.surfaceProcesses.diffusiveSurface_2D(
+
+    Model.surfaceProcesses = diffusiveSurface_2D(
     airIndex=air.index,
     sedimentIndex=Sediment.index,
     D= D_surface, ### diffusion value for surface, set at beginning of the script
     surfaceArray = coords,
     updateSurfaceLB = Update_material_LHS_Length * u.kilometer
 )
-    
-    if uw.mpi.rank == 0:
-        print('surface processes initialised')
 
-    ### track the temperature at the surface nodes
+
+    ### track the temperature
     Model.surface_tracers.add_tracked_field(Model.temperature,
                                 name="temperature",
                                 units=u.degK,
                                 dataType="float", count=1)
+    
+    if uw.mpi.rank == 0:
+        print('surface processes initialised')
     
 else:
     pass
 
 # %%
 # #### Run the Model
-Model.run_for((modelDuration* u.megayears)+(0.0001 * u.megayears), checkpoint_interval=The_Checkpoint_interval*u.megayears)
+Model.run_for((modelDuration+0.00001)* u.megayears, checkpoint_interval=The_Checkpoint_interval*u.megayears)
+
+# %%
+### save the final TS
+# Model.checkpoint(Model.checkpointID+1)
+
+# %%
+if GEO.nProcs == 1:
+    cbar = plt.scatter(Model.swarm.data[:,0], Model.swarm.data[:,1], c=Model.timeField.data, s=0.005)
+    plt.colorbar(cbar)
+    
+    print( np.unique(GEO.dim(Model.timeField.data, u.megayear).m ) )
 
 # %%
